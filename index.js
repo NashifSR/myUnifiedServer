@@ -1,17 +1,20 @@
 const express = require('express');
-const app = express();
 const cors = require('cors');
 require('dotenv').config();
 
+const { MongoClient, ServerApiVersion } = require('mongodb');
 const createTvetRouter = require('./routes/tvet');
+
+const app = express();
 
 app.use(cors());
 app.use(express.json());
 
+const PORT = process.env.PORT || 5000;
+
 const user = process.env.DB_USER;
 const pass = process.env.DB_PASS;
 
-const { MongoClient, ServerApiVersion } = require('mongodb');
 const uri = `mongodb+srv://${user}:${pass}@cluster0.saudl8t.mongodb.net/?appName=Cluster0`;
 
 const client = new MongoClient(uri, {
@@ -22,51 +25,116 @@ const client = new MongoClient(uri, {
   },
 });
 
+
 async function run() {
   try {
     await client.connect();
-    console.log("Connected to MongoDB Gateway successfully!");
+
+    console.log("Connected to MongoDB successfully!");
 
     const tvetDb = client.db("tvetDataBase");
-    const tvetShortQuestions = tvetDb.collection("shortQuestionCollection");
-    const tvetMCQQuestions = tvetDb.collection("multipleChoiceQuestionCollection");
-    const mcqSubmissions = tvetDb.collection("mcqSubmissionCollection");
-    const shortSubmissions = tvetDb.collection("shortSubmissionCollection");
 
-    app.use('/api/tvet', createTvetRouter(tvetShortQuestions, tvetMCQQuestions, mcqSubmissions, shortSubmissions));
+    const tvetShortQuestions =
+      tvetDb.collection("shortQuestionCollection");
 
-    app.get('/', async (req, res) => {
+    const tvetMCQQuestions =
+      tvetDb.collection("multipleChoiceQuestionCollection");
+
+    const mcqSubmissions =
+      tvetDb.collection("mcqSubmissionCollection");
+
+    const shortSubmissions =
+      tvetDb.collection("shortSubmissionCollection");
+
+
+    // Routes
+    app.use(
+      "/api/tvet",
+      createTvetRouter(
+        tvetShortQuestions,
+        tvetMCQQuestions,
+        mcqSubmissions,
+        shortSubmissions
+      )
+    );
+
+
+    // Health check
+    app.get("/", async (req, res) => {
       try {
-        const [totalShort, totalMCQs, totalMcqSub, totalShortSub] = await Promise.all([
-          tvetShortQuestions.countDocuments({}),
-          tvetMCQQuestions.countDocuments({}),
-          mcqSubmissions.countDocuments({}),
-          shortSubmissions.countDocuments({})
+
+        const [
+          totalShort,
+          totalMCQs,
+          totalMcqSub,
+          totalShortSub
+        ] = await Promise.all([
+          tvetShortQuestions.countDocuments(),
+          tvetMCQQuestions.countDocuments(),
+          mcqSubmissions.countDocuments(),
+          shortSubmissions.countDocuments()
         ]);
-        
-        res.send({
+
+
+        res.json({
           status: "Universal Engine Online",
-          tvetDiagnostics: { 
-            questions: { shortQuestionsCount: totalShort, multipleChoiceQuestionsCount: totalMCQs }, 
-            submissions: { mcqSubmissionsCount: totalMcqSub, writtenSubmissionsCount: totalShortSub } 
+
+          tvetDiagnostics: {
+            questions: {
+              shortQuestionsCount: totalShort,
+              multipleChoiceQuestionsCount: totalMCQs
+            },
+
+            submissions: {
+              mcqSubmissionsCount: totalMcqSub,
+              writtenSubmissionsCount: totalShortSub
+            }
           }
         });
-      } catch (error) {
-        res.status(500).send({ status: "Engine Error", error: error.message });
+
+
+      } catch (err) {
+
+        res.status(500).json({
+          status: "Engine Error",
+          error: err.message
+        });
+
       }
     });
 
+
     await client.db("admin").command({ ping: 1 });
 
-    // Dynamic Port Logic: Passing 0 tells the OS to assign an available port.
-    const server = app.listen(0, () => {
-      const actualPort = server.address().port;
-      console.log(`Server is running live on dynamic port: ${actualPort}`);
+    console.log("MongoDB ping successful");
+
+
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
     });
 
+
   } catch (error) {
-    console.error("Error connecting to MongoDB cluster matrix:", error);
+
+    console.error(
+      "MongoDB connection failed:",
+      error
+    );
+
+    process.exit(1);
   }
 }
 
-run().catch(console.dir);
+
+run();
+
+
+// graceful shutdown
+process.on("SIGINT", async () => {
+
+  await client.close();
+
+  console.log("MongoDB connection closed");
+
+  process.exit(0);
+});
