@@ -2,12 +2,14 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { MongoClient, ServerApiVersion } = require("mongodb");
 const { v2: cloudinary } = require("cloudinary");
+const createPaymentRouter = require("./routes/payment");
 
 const createTvetRouter = require("./routes/tvet");
 const createApiFixingRouter = require("./routes/apifixing");
 const createBikeRouter = require("./routes/bike");
+const createAssetsRouter = require("./routes/assets");
 
 const app = express();
 
@@ -62,10 +64,14 @@ async function run() {
 
     const tvetDb = client.db("tvetDataBase");
     const premiumBikeServiceDb = client.db("premiumBikeWorkshop");
+    const assetsDb = client.db("universalAssets"); // 👈 Moved up so it exists first!
 
     // ============================================================
-    // TVET Collections
+    // Collections
     // ============================================================
+
+    const paymentsCollection = assetsDb.collection("payments"); // 👈 Now safe to declare
+    const assets = assetsDb.collection("assets");
 
     const tvetShortQuestions = tvetDb.collection("shortQuestionCollection");
     const tvetMCQQuestions = tvetDb.collection("multipleChoiceQuestionCollection");
@@ -78,6 +84,11 @@ async function run() {
     // ============================================================
 
     app.use(
+      "/api/payment",
+      createPaymentRouter(paymentsCollection, assets)
+    );
+
+    app.use(
       "/api/tvet",
       createTvetRouter(
         tvetShortQuestions,
@@ -88,15 +99,22 @@ async function run() {
       )
     );
 
-    app.use("/api/fix", createApiFixingRouter(tvetDb));
+    app.use(
+      "/api/fix",
+      createApiFixingRouter(tvetDb)
+    );
 
-    // Bike Workshop
     app.use(
       "/api/bike",
       createBikeRouter(
         premiumBikeServiceDb,
         cloudinary
       )
+    );
+
+    app.use(
+      "/api/assets",
+      createAssetsRouter(assets)
     );
 
     // ============================================================
@@ -112,13 +130,19 @@ async function run() {
           totalMcqSub,
           totalShortSub,
           totalGallery,
+          totalAssets,
+          totalPayments,
         ] = await Promise.all([
           tvetShortQuestions.countDocuments(),
           tvetMCQQuestions.countDocuments(),
           tvetCourses.countDocuments(),
           mcqSubmissions.countDocuments(),
           shortSubmissions.countDocuments(),
-          premiumBikeServiceDb.collection("gallery").countDocuments(),
+          premiumBikeServiceDb
+            .collection("gallery")
+            .countDocuments(),
+          assets.countDocuments(),
+          paymentsCollection.countDocuments(),
         ]);
 
         res.json({
@@ -127,6 +151,7 @@ async function run() {
           databases: {
             tvet: "Connected",
             premiumBikeWorkshop: "Connected",
+            universalAssets: "Connected",
             cloudinary: "Configured",
           },
 
@@ -146,6 +171,11 @@ async function run() {
           bikeWorkshop: {
             galleryImages: totalGallery,
           },
+
+          universalAssets: {
+            assetsCount: totalAssets,
+            paymentsCount: totalPayments,
+          },
         });
       } catch (err) {
         res.status(500).json({
@@ -156,13 +186,20 @@ async function run() {
     });
 
     await client.db("admin").command({ ping: 1 });
+
     console.log("MongoDB ping successful");
 
     app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(
+        `🚀 Server running on port ${PORT}`
+      );
     });
   } catch (error) {
-    console.error("MongoDB connection failed:", error);
+    console.error(
+      "MongoDB connection failed:",
+      error
+    );
+
     process.exit(1);
   }
 }
@@ -171,6 +208,10 @@ run();
 
 process.on("SIGINT", async () => {
   await client.close();
-  console.log("MongoDB connection closed");
+
+  console.log(
+    "MongoDB connection closed"
+  );
+
   process.exit(0);
 });
