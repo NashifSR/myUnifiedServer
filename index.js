@@ -114,7 +114,10 @@ async function run() {
 
     app.use(
       "/api/assets",
-      createAssetsRouter(assets)
+      createAssetsRouter(
+        assets,
+        cloudinary
+      )
     );
 
     // ============================================================
