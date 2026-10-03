@@ -21,7 +21,8 @@ const PORT = process.env.PORT || 5000;
 const user = process.env.DB_USER;
 const pass = process.env.DB_PASS;
 
-const uri = `mongodb+srv://${user}:${pass}@cluster0.saudl8t.mongodb.net/?appName=Cluster0`;
+// const uri = `mongodb+srv://${user}:${pass}@cluster0.saudl8t.mongodb.net/?appName=Cluster0`;
+const uri = `mongodb://${user}:${pass}@ac-1bxkpxc-shard-00-00.saudl8t.mongodb.net:27017,ac-1bxkpxc-shard-00-01.saudl8t.mongodb.net:27017,ac-1bxkpxc-shard-00-02.saudl8t.mongodb.net:27017/?ssl=true&replicaSet=atlas-xbzyt6-shard-0&authSource=admin&appName=Cluster0`;
 
 const client = new MongoClient(uri, {
   serverApi: {

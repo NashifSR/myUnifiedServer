@@ -376,50 +376,104 @@ const createAssetsRouter = (
     // GET ALL ACCESSIBLE ASSETS
     // ============================================================
 
-    router.get(
-        "/data",
-        async (req, res) => {
-            try {
-                const email =
-                    normalizeEmail(
-                        req.query.email
-                    );
+router.get(
+    "/data",
+    async (req, res) => {
+        console.group("check", req.query);
 
-                const type =
-                    req.query.type
-                        ?.trim() || null;
-
-                if (!email) {
-                    return res.json([]);
-                }
-
-                const query = {
-                    "access.email": email,
-                };
-
-                if (type) {
-                    query.type = type;
-                }
-
-                const data =
-                    await assetsCollection
-                        .find(query)
-                        .toArray();
-
-                res.json(data);
-            } catch (error) {
-                console.error(
-                    "Get assets failed:",
-                    error
+        try {
+            const email =
+                normalizeEmail(
+                    req.query.email
                 );
 
-                res.status(500).json({
-                    error:
-                        "Failed to fetch assets.",
-                });
+            const type =
+                req.query.type
+                    ?.trim() || null;
+
+            const query = {};
+
+            if (type && type !== "all") {
+                query.type = type;
             }
+
+            const assets =
+                await assetsCollection
+                    .find(query)
+                    .toArray();
+
+            const data =
+                assets.filter((asset) => {
+
+                    const access =
+                        asset.access || [];
+
+                    return access.some(
+                        (item) => {
+
+                            const accessEmail =
+                                normalizeEmail(
+                                    item.email
+                                );
+
+                            const role =
+                                item.role
+                                    ?.trim()
+                                    .toLowerCase();
+
+                            // Public
+                            if (
+                                accessEmail ===
+                                    "anyone" &&
+                                role === "anyone"
+                            ) {
+                                return true;
+                            }
+
+                            // Any logged-in user
+                            if (
+                                accessEmail ===
+                                    "user" &&
+                                role === "user"
+                            ) {
+                                return !!email;
+                            }
+
+                            // Specific user
+                            if (
+                                email &&
+                                accessEmail ===
+                                    email
+                            ) {
+                                return true;
+                            }
+
+                            return false;
+                        }
+                    );
+                });
+
+            console.group(
+                "check response",
+                data
+            );
+
+            res.json(data);
+
+        } catch (error) {
+
+            console.error(
+                "Get assets failed:",
+                error
+            );
+
+            res.status(500).json({
+                error:
+                    "Failed to fetch assets.",
+            });
         }
-    );
+    }
+);
 
     // ============================================================
     // GET ONE
