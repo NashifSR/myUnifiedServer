@@ -235,6 +235,8 @@ const createPaymentRouter = (paymentsCollection, assetsCollection) => {
         })
         .toArray();
 
+        console.group("📦 Purchases for:", payments);
+
       return res.status(200).json({
         success: true,
 
