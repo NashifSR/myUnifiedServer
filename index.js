@@ -11,17 +11,18 @@ const createApiFixingRouter = require("./routes/apifixing");
 const createBikeRouter = require("./routes/bike");
 const createAssetsRouter = require("./routes/assets");
 
+
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 5000;
 
 const user = process.env.DB_USER;
 const pass = process.env.DB_PASS;
 
-// const uri = `mongodb+srv://${user}:${pass}@cluster0.saudl8t.mongodb.net/?appName=Cluster0`;
 const uri = `mongodb://${user}:${pass}@ac-1bxkpxc-shard-00-00.saudl8t.mongodb.net:27017,ac-1bxkpxc-shard-00-01.saudl8t.mongodb.net:27017,ac-1bxkpxc-shard-00-02.saudl8t.mongodb.net:27017/?ssl=true&replicaSet=atlas-xbzyt6-shard-0&authSource=admin&appName=Cluster0`;
 
 const client = new MongoClient(uri, {
@@ -32,46 +33,25 @@ const client = new MongoClient(uri, {
   },
 });
 
-// ============================================================
 // Cloudinary Configuration
-// ============================================================
-
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-if (
-  process.env.CLOUDINARY_CLOUD_NAME &&
-  process.env.CLOUDINARY_API_KEY &&
-  process.env.CLOUDINARY_API_SECRET
-) {
-  console.log(
-    `☁️ Cloudinary configured successfully (${process.env.CLOUDINARY_CLOUD_NAME})`
-  );
-} else {
-  console.warn("⚠️ Cloudinary environment variables are missing.");
-}
-
 async function run() {
   try {
     await client.connect();
-    console.log("Connected to MongoDB successfully!");
+    console.log(" Connected to MongoDB successfully!");
 
-    // ============================================================
     // Databases
-    // ============================================================
-
     const tvetDb = client.db("tvetDataBase");
     const premiumBikeServiceDb = client.db("premiumBikeWorkshop");
-    const assetsDb = client.db("universalAssets"); // 👈 Moved up so it exists first!
+    const assetsDb = client.db("universalAssets");
 
-    // ============================================================
     // Collections
-    // ============================================================
-
-    const paymentsCollection = assetsDb.collection("payments"); // 👈 Now safe to declare
+    const paymentsCollection = assetsDb.collection("payments");
     const assets = assetsDb.collection("assets");
 
     const tvetShortQuestions = tvetDb.collection("shortQuestionCollection");
@@ -80,15 +60,8 @@ async function run() {
     const mcqSubmissions = tvetDb.collection("mcqSubmissionCollection");
     const shortSubmissions = tvetDb.collection("shortSubmissionCollection");
 
-    // ============================================================
-    // Routes
-    // ============================================================
-
-    app.use(
-      "/api/payment",
-      createPaymentRouter(paymentsCollection, assets)
-    );
-
+    // Route Registration (Mounted as soon as DB connects)
+    app.use("/api/payment", createPaymentRouter(paymentsCollection, assets));
     app.use(
       "/api/tvet",
       createTvetRouter(
@@ -99,32 +72,11 @@ async function run() {
         shortSubmissions
       )
     );
+    app.use("/api/fix", createApiFixingRouter(tvetDb));
+    app.use("/api/bike", createBikeRouter(premiumBikeServiceDb, cloudinary));
+    app.use("/api/assets", createAssetsRouter(assets, cloudinary));
 
-    app.use(
-      "/api/fix",
-      createApiFixingRouter(tvetDb)
-    );
-
-    app.use(
-      "/api/bike",
-      createBikeRouter(
-        premiumBikeServiceDb,
-        cloudinary
-      )
-    );
-
-    app.use(
-      "/api/assets",
-      createAssetsRouter(
-        assets,
-        cloudinary
-      )
-    );
-
-    // ============================================================
-    // Health Check
-    // ============================================================
-
+    // Diagnostic Route
     app.get("/", async (req, res) => {
       try {
         const [
@@ -142,68 +94,42 @@ async function run() {
           tvetCourses.countDocuments(),
           mcqSubmissions.countDocuments(),
           shortSubmissions.countDocuments(),
-          premiumBikeServiceDb
-            .collection("gallery")
-            .countDocuments(),
+          premiumBikeServiceDb.collection("gallery").countDocuments(),
           assets.countDocuments(),
           paymentsCollection.countDocuments(),
         ]);
 
         res.json({
           status: "Universal Engine Online",
-
           databases: {
             tvet: "Connected",
             premiumBikeWorkshop: "Connected",
             universalAssets: "Connected",
             cloudinary: "Configured",
           },
-
-          tvetDiagnostics: {
-            questions: {
-              shortQuestionsCount: totalShort,
-              multipleChoiceQuestionsCount: totalMCQs,
-              coursesCount: totalCourses,
-            },
-
-            submissions: {
-              mcqSubmissionsCount: totalMcqSub,
-              writtenSubmissionsCount: totalShortSub,
-            },
-          },
-
-          bikeWorkshop: {
-            galleryImages: totalGallery,
-          },
-
           universalAssets: {
             assetsCount: totalAssets,
             paymentsCount: totalPayments,
           },
         });
       } catch (err) {
-        res.status(500).json({
-          status: "Engine Error",
-          error: err.message,
-        });
+        res.status(500).json({ status: "Engine Error", error: err.message });
       }
     });
 
-    await client.db("admin").command({ ping: 1 });
-
-    console.log("MongoDB ping successful");
+    // Universal 404 Catch-All Route (Must be last)
+    app.use((req, res) => {
+      res.status(404).json({
+        success: false,
+        error: `Route not found: ${req.method} ${req.originalUrl}`,
+      });
+    });
 
     app.listen(PORT, () => {
-      console.log(
-        `🚀 Server running on port ${PORT}`
-      );
+      console.log(`🚀 Server running on port ${PORT}`);
     });
   } catch (error) {
-    console.error(
-      "MongoDB connection failed:",
-      error
-    );
-
+    console.error("MongoDB connection failed:", error);
     process.exit(1);
   }
 }
@@ -212,10 +138,6 @@ run();
 
 process.on("SIGINT", async () => {
   await client.close();
-
-  console.log(
-    "MongoDB connection closed"
-  );
-
+  console.log("MongoDB connection closed");
   process.exit(0);
 });
